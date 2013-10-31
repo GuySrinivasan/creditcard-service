@@ -1,14 +1,114 @@
 """
-Tutorial - Multiple objects
-
-This tutorial shows you how to create a site structure through multiple
-possibly nested request handler objects.
+Pages and functionality:
+1. landing page
+2. choose your username from a dropdown or add a new username
+3. page with credit card info and dropdown to switch between cards
+4. allow entering comments on that page
+Stretch. page with pending notifications or requests for info
 """
 
 import cherrypy
 import mysql.connector
 import datetime
 
+class CreditCardHome:
+    def __init__(self, user):
+        self.header = '''Our Credit Cards'''
+        self.usernames = self.sqlGetUsernames()
+        self.username = self.usernames[0]
+        self.debug = []
+
+    def index(self):
+        self.usernames = self.sqlGetUsernames()
+        self.changeUser(self.username)
+            
+        page = [self.header]
+        page.append(self.createWelcome(self.username))
+        page.append(self.createDropdown(self.usernames))
+        page.append(self.createAddNew())
+        page.append(self.createDebuggingInfo())
+        return "".join(["<p>{}</p>".format(x) for x in page])
+    index.exposed = True
+
+    def switchUser(self, username=None):
+        self.changeUser(username)
+        return self.index()
+    switchUser.exposed = True
+
+    def addNewUser(self, username=None):
+        self.sqlAddUsername(username)
+        self.usernames = self.sqlGetUsernames()
+        self.changeUser(username)
+        return self.index()
+    addNewUser.exposed = True
+
+    def sqlAddUsername(self, username):
+        cnx = mysql.connector.connect(
+            user='creditcarduser',
+            password='password',
+            database='creditcard')
+        cursor = cnx.cursor()
+        checkQuery = ("SELECT COUNT(name) FROM users WHERE name='{}';".format(username))
+        self.debug.append(checkQuery)
+        cursor.execute(checkQuery)
+        if int(cursor.fetchone()[0]) == 0:
+            insertQuery = ("INSERT INTO users (name) VALUES ('{}');".format(username))
+            self.debug.append(insertQuery)
+            cursor.execute(insertQuery)
+        cnx.commit()
+        cursor.close()
+        cnx.close()
+
+    def sqlGetUsernames(self):
+        cnx = mysql.connector.connect(
+            user='creditcarduser',
+            password='password',
+            database='creditcard')
+        cursor = cnx.cursor()
+        query = ("SELECT name FROM users")
+        cursor.execute(query)
+        usernames = []
+        for name in cursor:
+            usernames.append(name[0])
+        cursor.close()
+        cnx.close()
+        return usernames
+
+    def changeUser(self, username):
+        if (username in self.usernames):
+            self.username = username
+        else:
+            self.username = self.usernames[0]
+
+    def createWelcome(self, username):
+        return '''Welcome, {}.'''.format(username)
+
+    def createDropdown(self, usernames):
+        dropdown = '''
+<form action="switchUser" method="post">
+    <p>Switch user</p>
+    {}
+    <p><input type="submit" value="Switch"/></p>
+</form>
+'''
+        userOptionTemplate = '''
+<input type="radio" name="username" value="{}">{}
+'''
+        userOptions = "<br>".join([userOptionTemplate.format(x,x) for x in usernames])
+        return dropdown.format(userOptions)
+
+    def createAddNew(self):
+        form = '''
+<form action="addNewUser" method="post">
+    <p>Add new user</p>
+    <input type="text" name="username" value="" size="15" maxlength="40"/>
+    <p><input type="submit" value="Add"/></p>
+</form>'''
+        return form
+
+    def createDebuggingInfo(self):
+        return "<br>".join(self.debug)
+    
 class HomePage:
     def index(self):
         return '''
@@ -105,10 +205,10 @@ class ExtraLinksPage:
 
 
 # Of course we can also mount request handler objects right here!
-root = HomePage()
-root.joke = JokePage()
-root.links = LinksPage()
-root.pets = PetInfoPage()
+#root = HomePage()
+#root.joke = JokePage()
+#root.links = LinksPage()
+#root.pets = PetInfoPage()
 
 # Remember, we don't need to mount ExtraLinksPage here, because
 # LinksPage does that itself on initialization. In fact, there is
@@ -123,7 +223,7 @@ if __name__ == '__main__':
     # CherryPy always starts with app.root when trying to map request URIs
     # to objects, so we need to mount a request handler root. A request
     # to '/' will be mapped to HelloWorld().index().
-    cherrypy.quickstart(root, config=serviceconf)
+    cherrypy.quickstart(CreditCardHome("Guy"), config=serviceconf)
 else:
     # This branch is for the test suite; you can ignore it.
     cherrypy.tree.mount(root, config=serviceconf)
